@@ -1,24 +1,25 @@
 #include "ghdev.h"
+#include <linux/string.h>
 
 static struct serdev_device_ops slave_ops ;
 static struct gh_dev *gdev;
 
-static int my_open(struct inode *i, struct file *f)
+static int ch_open(struct inode *i, struct file *f)
 {
     printk(KERN_INFO "Driver: open()\n");
     return 0;
 }
-static int my_close(struct inode *i, struct file *f)
+static int ch_close(struct inode *i, struct file *f)
 {
     printk(KERN_INFO "Driver: close()\n");
     return 0;
 }
-static ssize_t my_read(struct file *f, char __user *buf, size_t len, loff_t *off)
+static ssize_t ch_read(struct file *f, char __user *buf, size_t len, loff_t *off)
 {
     printk(KERN_INFO "Driver: read()\n");
     return 0;
 }
-static ssize_t my_write(struct file *f, const char __user *buf, size_t len,
+static ssize_t ch_write(struct file *f, const char __user *buf, size_t len,
     loff_t *off)
 {
     printk(KERN_INFO "Driver: write()\n");
@@ -28,10 +29,10 @@ static ssize_t my_write(struct file *f, const char __user *buf, size_t len,
 static struct file_operations pugs_fops =
 {
     .owner = THIS_MODULE,
-    .open = my_open,
-    .release = my_close,
-    .read = my_read,
-    .write = my_write
+    .open = ch_open,
+    .release = ch_close,
+    .read = ch_read,
+    .write = ch_write
 };
 
 
@@ -40,13 +41,6 @@ static int gh_chrdev_register(void)
 	int ret;
         struct device *dev_ret;
 
-	gdev = kzalloc(sizeof(struct gh_dev), GFP_KERNEL);
-	if(NULL == gdev)
-	{
-		pr_err("Unable to allocate kernel mem.\n");
-		return -1;
-	}
-	 
         printk(KERN_INFO "Allocating new region to cdev");
 	if ((ret = alloc_chrdev_region(&gdev->devno, 0, 1, "ghregion")) < 0)
     	{
@@ -91,7 +85,6 @@ static void gh_chrdev_unregister(void)
                 cdev_del(&gdev->cdev);
 		unregister_chrdev_region(gdev->devno, 1);
 		gdev->dev_ready = 0;
-		kfree(gdev);
 		pr_info("Chardev removed.\n");
 	}
 	
@@ -100,8 +93,23 @@ static void gh_chrdev_unregister(void)
 static int msg_parser(const u8 buf[], size_t len)
 {
 	int ret = 0;
-
-	return 0;
+	u8 tmp_buf[32 + 1] = {0};
+	
+	strncpy(tmp_buf, buf, len);
+	pr_info("Received Buffer: %s\n", tmp_buf);
+	if(strncmp(tmp_buf, "AT+OK", 5) == 0)
+	{
+		if(!gdev->dev_ready)
+		{
+			pr_info("Registering New gh controller.\n");
+			gh_chrdev_register();
+		}
+		else
+		{
+			pr_info("Device already registered.\n");
+		}
+	}
+	return len;
 	
 }
 
@@ -109,19 +117,21 @@ static int msg_parser(const u8 buf[], size_t len)
 /**** Serdev Methods ******/
 int rcv_buf( struct serdev_device * serdev , const unsigned char * buf, size_t n)
 {
-	char pr_buff[128] = {0};
-	int i = 0;
-	for(i = 0; i < n; i++)
-		pr_buff[i] = buf[i];
-	pr_buff[i+1] = 0;
-	pr_info("rcv_buff called.%s\n", pr_buff);
-	gh_chrdev_register();
+	msg_parser(buf, n);	
 	return n;
 
 }
 static int gh_probe(struct serdev_device *serdev) {
   int iret = 0;
   unsigned char msg[] = "hello";
+  
+  gdev = kzalloc(sizeof(struct gh_dev), GFP_KERNEL);
+  if(NULL == gdev)
+  {
+          pr_err("Unable to allocate kernel mem.\n");
+          return -1;
+  }
+
   slave_ops.receive_buf = rcv_buf;
   serdev_device_set_client_ops(serdev, &slave_ops);
   iret = serdev_device_open(serdev);
@@ -139,6 +149,7 @@ static int gh_probe(struct serdev_device *serdev) {
 static void gh_remove(struct serdev_device *serdev) {
   gh_chrdev_unregister();
   serdev_device_close(serdev);
+  kfree(gdev);
   pr_info("Serial Device Closed.\n");
 }
 
