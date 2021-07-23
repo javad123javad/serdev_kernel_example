@@ -6,7 +6,8 @@
 #include <linux/of.h>
 #include <linux/regulator/consumer.h>
 #include <linux/serdev.h>
-
+#include <linux/pm_domain.h>
+#include <linux/pm_runtime.h>
 static struct serdev_device_ops slave_ops ;
 int rcv_buf( struct serdev_device * serdev , const unsigned char * buf, size_t n)
 {
@@ -15,8 +16,9 @@ int rcv_buf( struct serdev_device * serdev , const unsigned char * buf, size_t n
 	for(i = 0; i < n; i++)
 		pr_buff[i] = buf[i];
 	pr_buff[i+1] = 0;
-	pr_info("rcv_buff called.%s\n", pr_buff);
-	return 0;
+	pr_info("rcv_buff called:\nLen: %ld\nValue:%s\n", n, pr_buff);
+
+	return n;
 
 }
 static int gh_probe(struct serdev_device *serdev) {
@@ -32,6 +34,7 @@ static int gh_probe(struct serdev_device *serdev) {
 
   pr_info("Serial device openned.\n");
   serdev_device_set_baudrate(serdev, 115200);
+  serdev_device_set_flow_control(serdev, false);
   serdev_device_write_buf(serdev,msg,5);
   return 0;
 }
