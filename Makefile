@@ -1,5 +1,6 @@
 PWD := $(shell pwd)
 obj-m += ser_dev.o
+#obj-m += ser_chr.o
 CROSS = aarch64-linux-gnu-
 KERNEL_DIR = /lib/modules/`uname -r`/build
 all:
